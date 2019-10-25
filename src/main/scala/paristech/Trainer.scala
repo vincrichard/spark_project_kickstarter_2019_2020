@@ -5,6 +5,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.ml.feature._
 import org.apache.spark.ml.evaluation._
 import org.apache.spark.ml.classification._
+import org.apache.spark.ml.param.Param
 import org.apache.spark.ml.tuning._
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 
@@ -67,6 +68,7 @@ object Trainer {
     val countVectorizer: CountVectorizer = new CountVectorizer()
       .setInputCol(stopWordsRemover.getOutputCol)
       .setOutputCol("vector")
+      .setMinDF(55.0)
 
     //Stage 4 : Computer la partie IDF
     val idf : IDF = new IDF()
@@ -77,10 +79,12 @@ object Trainer {
     val indexerCountry : StringIndexer = new StringIndexer()
       .setInputCol("country2")
       .setOutputCol("country_indexed")
+      .setHandleInvalid("keep")
 
     val indexerCurrency : StringIndexer = new StringIndexer()
       .setInputCol("currency2")
       .setOutputCol("currency_indexed")
+      .setHandleInvalid("keep")
 
     //Stage 7 : One-Hot encoder
     val encoder : OneHotEncoderEstimator = new OneHotEncoderEstimator()
@@ -122,10 +126,10 @@ object Trainer {
     val Array(training, test) = dfClean.randomSplit(Array(0.9, 0.1), seed = 12345)
 
     //Entrainement du model
-    val model: PipelineModel = pipeline.fit(training)
+    val modelSimple: PipelineModel = pipeline.fit(training)
 
     //Test du model
-    val dfWithSimplePredictions : DataFrame = model.transform(test)
+    val dfWithSimplePredictions : DataFrame = modelSimple.transform(test)
 
     //Afficher le f1 score
     val f1Evaluator = new MulticlassClassificationEvaluator()
@@ -133,8 +137,36 @@ object Trainer {
       .setLabelCol("final_status")
       .setPredictionCol("predictions")
 
-    println("f1 score : " + f1Evaluator.evaluate(dfWithSimplePredictions))
+    println("dfWithSimplePredictions f1 score : " + f1Evaluator.evaluate(dfWithSimplePredictions))
+    println("dfWithSimplePredictions values")
     dfWithSimplePredictions.groupBy("final_status", "predictions").count.show()
+
+    /*******************
+      * Grid Search
+      ********************/
+    //Set up du Grid parameter
+    val paramGrid = new ParamGridBuilder()
+      .addGrid(lr.getParam("tol"), Array(10e-8, 10e-6, 10e-4, 10e-2))
+      .addGrid(countVectorizer.getParam("minDF"), Array(55.0,75.0,95.0))
+      .build()
+
+    //Set up du Train Validation Split (On considère nos données assez grosse pour ne pas utiliser
+    // la class CrossValidation
+    val trainValidationSplit = new TrainValidationSplit()
+      .setEstimator(pipeline)
+      .setEvaluator(f1Evaluator)
+      .setEstimatorParamMaps(paramGrid)
+      .setTrainRatio(0.7)
+
+    //Entrainement du model
+    val model = trainValidationSplit.fit(training)
+
+    //Test du model
+    val dfWithPredictions = model.transform(test)
+
+    println("dfWithPredictions f1 score : " + f1Evaluator.evaluate(dfWithPredictions))
+    println("dfWithPredictions values")
+    dfWithPredictions.groupBy("final_status", "predictions").count.show()
 
   }
 }
