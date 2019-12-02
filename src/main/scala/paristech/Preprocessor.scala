@@ -53,12 +53,16 @@ object Preprocessor {
       .read
       .option("header", true) // utilise la première ligne du (des) fichier(s) comme header
       .option("inferSchema", "true") // pour inférer le type de chaque colonne (Int, String, etc.)
-      .csv("/media/vincent/C0FC3B20FC3B0FE0/MSBGD/Spark/TP/cours-spark-telecom/data/train_clean.csv")
+      .csv("data/train_clean.csv")
 
 //    println(s"Nombre de lignes : ${df.count}")
 //    println(s"Nombre de colonnes : ${df.columns.length}")
 //    df.show()
 //    df.printSchema()
+
+    /******************************
+      * Typage de nos données
+      ***************************/
 
     val dfCasted: DataFrame = df
       .withColumn("goal", $"goal".cast("Int"))
@@ -69,33 +73,16 @@ object Preprocessor {
       .withColumn("backers_count", $"backers_count".cast("Int"))
       .withColumn("final_status", $"final_status".cast("Int"))
 
-//    dfCasted.printSchema()
 
-//    dfCasted
-//      .select("goal", "backers_count", "final_status")
-//      .describe()
-//      .show
-
-//    dfCasted.groupBy("disable_communication").count.orderBy($"count".desc).show(100)
-//    dfCasted.groupBy("country").count.orderBy($"count".desc).show(100)
-//    dfCasted.groupBy("currency").count.orderBy($"count".desc).show(100)
-//    dfCasted.select("deadline").dropDuplicates.show()
-//    dfCasted.groupBy("state_changed_at").count.orderBy($"count".desc).show(100)
-//    dfCasted.groupBy("backers_count").count.orderBy($"count".desc).show(100)
-//    dfCasted.select("goal", "final_status").show(30)
-//    dfCasted.groupBy("country", "currency").count.orderBy($"count".desc).show(50)
     //Remove a column which is not useful
     val df2: DataFrame = dfCasted.drop("disable_communication")
     //Remove column with values concerning the future result of the campaign
     val dfNoFutur: DataFrame = df2.drop("backers_count", "state_changed_at")
 
-//    df.filter($"country" === "False")
-//      .groupBy("currency")
-//      .count
-//      .orderBy($"count".desc)
-//      .show(50)
 
-    //
+    /***********************************************************
+      * Cleanning des colonnes currency et country via des udf
+      *********************************************************/
     val cleanCountryUdf = udf(cleanCountry _)
     val cleanCurrencyUdf = udf(cleanCurrency _)
 
@@ -115,10 +102,16 @@ object Preprocessor {
     val dfFinalStatus = dfCountry
       .filter($"final_status" === 1 or $"final_status" === 0)
 
+
+    /*************************************
+      * Ajout et manipuation de colonnes
+      *************************************/
+
     //Ajout d'une colone days_campaign contenant la durée de la campagne
     val createDaysCampaignUdf = udf(createDaysCampaign _)
     val dfDayCampaign : DataFrame = dfFinalStatus
       .withColumn("days_campaign", createDaysCampaignUdf($"launched_at", $"deadline"))
+
     //Ajout d'une colonne hours_prepa contenant le temps de preparation de la campagne
     val createHoursPrepaUdf = udf(createHoursPrepa _)
     val dfHoursPrepa : DataFrame = dfDayCampaign
@@ -142,8 +135,10 @@ object Preprocessor {
     //Remove hours_prepa < 0
       .filter($"hours_prepa" >0)
 
-    //Create parquet file
-    dfClean.write.mode(SaveMode.Overwrite).parquet("/media/vincent/C0FC3B20FC3B0FE0/MSBGD/Spark/TP/data/")
+    /**********************************
+      * Exportation du Dataframe obtenu
+      **********************************/
+    dfClean.write.mode(SaveMode.Overwrite).parquet("data/out/")
   }
 
   /**
@@ -167,20 +162,14 @@ object Preprocessor {
   }
 
   /**
-    * Methode utilisé pour créer la colonne days_campaign
-    * @param launched_at
-    * @param deadline
-    * @return
+    * Methode utilisé pour créer la colonne days_campaign qui représente la durée de la campagne en jours
     */
   def createDaysCampaign(launched_at: Int, deadline: Int): Int = {
     return (deadline - launched_at) / 86400
   }
 
   /**
-    * Methode utilisé pour créer la colonne hours_prepa
-    * @param created_at
-    * @param launched_at
-    * @return
+    * Methode utilisé pour créer la colonne hours_prepa qui représente le nombre d’heures de préparation de la campagne
     */
   def createHoursPrepa(created_at: Int, launched_at: Int): Double = {
     return (launched_at.toFloat - created_at.toFloat) / 3600.0

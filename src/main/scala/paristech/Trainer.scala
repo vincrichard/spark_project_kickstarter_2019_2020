@@ -49,7 +49,7 @@ object Trainer {
     val dfClean : DataFrame = spark.read
       .option("header", true) // utilise la première ligne du (des) fichier(s) comme header
       .option("inferSchema", "true") // pour inférer le type de chaque colonne (Int, String, etc.)
-      .parquet("/media/vincent/C0FC3B20FC3B0FE0/MSBGD/Spark/TP/cours-spark-telecom/data/prepared_trainingset")
+      .parquet("data/prepared_trainingset")
 
     //Stage 1 : Récupérer les mots
     val tokenizer : RegexTokenizer = new RegexTokenizer()
@@ -151,7 +151,7 @@ object Trainer {
       .build()
 
     //Set up du Train Validation Split (On considère nos données assez grosse pour ne pas utiliser
-    // la class CrossValidation
+    // la class CrossValidation)
     val trainValidationSplit = new TrainValidationSplit()
       .setEstimator(pipeline)
       .setEvaluator(f1Evaluator)
